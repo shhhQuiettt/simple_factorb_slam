@@ -6,6 +6,6 @@ CC = gcc
 sim: sim.c
 	$(CC) $(CFLAGS) -o sim sim.c $(LDFLAGS)
 
-run:
+run: sim
 	./sim
 
