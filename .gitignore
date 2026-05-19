@@ -1,0 +1,57 @@
+# =========================
+# CMake & Build Directories
+# =========================
+build/
+build-*/
+out/
+bin/
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+
+# =========================
+# C/C++ Compiled Artifacts
+# =========================
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dylib
+*.dll
+
+# =========================
+# Project Executables
+# =========================
+simulator
+slam_node
+*.exe
+*.out
+*.app
+
+# =========================
+# IDEs & Code Editors
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.workspace
+*.cbp
+
+# =========================
+# OS-Specific Files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Logs and SLAM Data
+# =========================
+*.log
+*.csv
+*.pcd
+*.g2o
