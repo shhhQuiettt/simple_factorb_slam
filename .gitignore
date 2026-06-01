@@ -26,8 +26,6 @@ compile_commands.json
 # =========================
 # Project Executables
 # =========================
-simulator
-slam_node
 *.exe
 *.out
 *.app
