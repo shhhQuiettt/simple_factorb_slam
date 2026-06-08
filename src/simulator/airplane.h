@@ -6,20 +6,14 @@
 
 typedef struct Airplane {
     Vector3 position;
-    float forward_speed;
-
-    float pitch_dot;
-    float yaw_dot;
-    float pitch;
-    float yaw;
+    Vector3 velocity;
+    Vector3 twist;
 
     Quaternion rotation;
+
+
 } Airplane;
 
 
-typedef struct Landmark {
-    uint8_t id;
-    Vector3 position;
-} Landmark;
 
 #endif // AIRPLANE_H

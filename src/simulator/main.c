@@ -1,6 +1,8 @@
 #include "airplane.h"
+
 #include "make_measurements.h"
 #include "measurement_types.h"
+#include <assert.h>
 #include <raylib.h>
 #include <raymath.h>
 #include <rlgl.h>
@@ -24,51 +26,84 @@
 #define FORWARD_SPEED 10.0f
 #define N_LANDMARKS 3
 
+#define X_AXIS (Vector3){1, 0, 0}
+#define Y_AXIS (Vector3){0, 1, 0}
+#define Z_AXIS (Vector3){0, 0, 1}
+
 float global_covariance[3];
+
+bool almost_equal(float a, float b) {
+    const float epsilon = 1e-6f;
+    return fabs(a - b) < epsilon;
+}
+
+Vector3 ToRaylibPosition(Vector3 world_position) {
+    Vector3 raylib_position;
+    raylib_position.x = -world_position.y;
+    raylib_position.y = world_position.z;
+    raylib_position.z = -world_position.x;
+    return raylib_position;
+}
+
+Quaternion ToRaylibRotation(Quaternion world_rotation) {
+    Quaternion raylib_rotation;
+    raylib_rotation.x = -world_rotation.y;
+    raylib_rotation.y = world_rotation.z;
+    raylib_rotation.z = -world_rotation.x;
+    raylib_rotation.w = world_rotation.w;
+    return raylib_rotation;
+}
 
 void DrawVectorXYZ(Vector3 position, float length, float thickness) {
     Vector3 endX = Vector3Add(position, (Vector3){length, 0, 0});
     Vector3 endY = Vector3Add(position, (Vector3){0, length, 0});
     Vector3 endZ = Vector3Add(position, (Vector3){0, 0, length});
 
-    DrawCylinderEx(position, endX, thickness / 2, thickness / 2, 8, RED);
-    DrawCylinderEx(position, endY, thickness / 2, thickness / 2, 8, GREEN);
-    DrawCylinderEx(position, endZ, thickness / 2, thickness / 2, 8, BLUE);
+    DrawCylinderEx(ToRaylibPosition(position), ToRaylibPosition(endX),
+                   thickness / 2, thickness / 2, 8, RED);
+    DrawCylinderEx(ToRaylibPosition(position), ToRaylibPosition(endY),
+                   thickness / 2, thickness / 2, 8, GREEN);
+    DrawCylinderEx(ToRaylibPosition(position), ToRaylibPosition(endZ),
+                   thickness / 2, thickness / 2, 8, BLUE);
 }
 
 void DrawTF(Vector3 position, Quaternion rotation, float length,
             float thickness) {
-    Vector3 localX = Vector3RotateByQuaternion((Vector3){1, 0, 0}, rotation);
-    Vector3 localY = Vector3RotateByQuaternion((Vector3){0, 1, 0}, rotation);
-    Vector3 localZ = Vector3RotateByQuaternion((Vector3){0, 0, 1}, rotation);
+    Vector3 localX = Vector3RotateByQuaternion(X_AXIS, rotation);
+
+    Vector3 localY = Vector3RotateByQuaternion(Y_AXIS, rotation);
+    Vector3 localZ = Vector3RotateByQuaternion(Z_AXIS, rotation);
 
     Vector3 endX = Vector3Add(position, Vector3Scale(localX, length));
     Vector3 endY = Vector3Add(position, Vector3Scale(localY, length));
     Vector3 endZ = Vector3Add(position, Vector3Scale(localZ, length));
 
-    DrawCylinderEx(position, endX, thickness / 2, thickness / 2, 8, RED);
-    DrawCylinderEx(position, endY, thickness / 2, thickness / 2, 8, GREEN);
-    DrawCylinderEx(position, endZ, thickness / 2, thickness / 2, 8, BLUE);
+    DrawCylinderEx(ToRaylibPosition(position), ToRaylibPosition(endX),
+                   thickness / 2, thickness / 2, 8, RED);
+    DrawCylinderEx(ToRaylibPosition(position), ToRaylibPosition(endY),
+                   thickness / 2, thickness / 2, 8, GREEN);
+    DrawCylinderEx(ToRaylibPosition(position), ToRaylibPosition(endZ),
+                   thickness / 2, thickness / 2, 8, BLUE);
 }
 
 Airplane createAirplane(void) {
     Airplane plane = {0};
-    plane.forward_speed = FORWARD_SPEED;
-    plane.position = (Vector3){0, 50.0f, 0.0f};
-    plane.rotation = QuaternionFromAxisAngle((Vector3){0, 1, 0}, PI);
-    // plane.rotation = QuaternionIdentity();
-    plane.pitch = QuaternionToEuler(plane.rotation).y;
-    plane.yaw = QuaternionToEuler(plane.rotation).z;
+    plane.velocity = (Vector3){FORWARD_SPEED, 0.0f, 0.0f};
+    plane.position =
+        (Vector3){PLANE_INITIAL_X, PLANE_INITIAL_Y, PLANE_INITIAL_Z};
 
-    plane.pitch_dot = 0.0f;
-    plane.yaw_dot = PI / 8;
+    plane.rotation = QuaternionIdentity();
+    plane.twist = (Vector3){0.0f, 0.0f, PI / 8};
+    // plane.twist = (Vector3){0.0f, 0.0f, 0.0f};
 
     return plane;
 }
 
 void drawLandmarks(Landmark *landmarks, int n_landmarks) {
+    const Color colors[3] = {RED, GREEN, BLUE};
     for (int i = 0; i < n_landmarks; i++) {
-        DrawSphere(landmarks[i].position, 3.0f, DARKBLUE);
+        DrawSphere(ToRaylibPosition(landmarks[i].position), 3.0f,
+                   colors[i % 3]);
     }
 }
 
@@ -80,9 +115,13 @@ void drawAirplane(Airplane plane) {
     const float wingHeight = 0.5f;
 
     rlPushMatrix();
-    rlTranslatef(plane.position.x, plane.position.y, plane.position.z);
 
-    rlMultMatrixf(MatrixToFloatV(QuaternionToMatrix(plane.rotation)).v);
+    Vector3 raylib_position = ToRaylibPosition(plane.position);
+    rlTranslatef(raylib_position.x, raylib_position.y, raylib_position.z);
+
+    Quaternion raylib_rotation = ToRaylibRotation(plane.rotation);
+    Matrix rotation_matrix = QuaternionToMatrix(raylib_rotation);
+    rlMultMatrixf(MatrixToFloat(rotation_matrix));
 
     Vector3 startPosition = (Vector3){0, 0, -cabinLength / 2};
     Vector3 endPosition = (Vector3){0, 0, cabinLength / 2};
@@ -99,24 +138,38 @@ void drawAirplane(Airplane plane) {
     DrawTF(plane.position, plane.rotation, 8, 0.5f);
 }
 
-void drawPrediction(PoseWithCovariance prediction) {
-    DrawTF(prediction.position, prediction.orientation, 8, 0.5f);
-    float covariance_x = prediction.covariance[0][0];
-    float covariance_y = prediction.covariance[1][1];
-    float covariance_z = prediction.covariance[2][2];
+void drawPrediction(PoseWithCovariance prediction, Model prediction_ellipsoid) {
+    DrawTF(prediction.position, prediction.orientation, 5.0f, 0.5f);
+    float covariance_x = prediction.covariance[3][3];
+    float covariance_y = prediction.covariance[4][4];
+    float covariance_z = prediction.covariance[5][5];
 
     global_covariance[0] = covariance_x;
     global_covariance[1] = covariance_y;
     global_covariance[2] = covariance_z;
 
-    Mesh sphereMesh = GenMeshSphere(1.0f, 16, 16);
-    Model ellipsoid = LoadModelFromMesh(sphereMesh);
+    prediction_ellipsoid.transform =
+        MatrixScale(3 * sqrtf(covariance_y), 3 * sqrtf(covariance_z),
+                    3 * sqrtf(covariance_x));
 
+    prediction_ellipsoid.materials[0].maps[MATERIAL_MAP_DIFFUSE].color =
+        Fade(RED, 0.2f);
 
-    ellipsoid.transform = MatrixScale(covariance_x, covariance_y, covariance_z);
-    // DrawModel(ellipsoid, prediction.position, 1.0f, Fade(RED, 0.5f));
+    // rlEnableColorBlend();
+    // rlDisableDepthMask();
+    // rlDisableBackfaceCulling();
 
+    DrawModel(prediction_ellipsoid, ToRaylibPosition(prediction.position), 1.0f,
+              WHITE);
 
+    // rlDrawRenderBatchActive();
+    // rlEnableBackfaceCulling();
+    // rlEnableDepthMask();
+}
+
+float getRoll(Airplane plane) {
+    Vector3 forward = QuaternionToEuler(plane.rotation);
+    return forward.x;
 }
 
 float getPitch(Airplane plane) {
@@ -129,41 +182,37 @@ float getYaw(Airplane plane) {
     return forward.z;
 }
 
-float getRoll(Airplane plane) {
-    Vector3 forward = QuaternionToEuler(plane.rotation);
-    return forward.x;
-}
-
 void updateAirplane(Airplane *plane, float deltaTime) {
-    Vector2 mouse_delta = GetMouseDelta();
+    float roll_delta = plane->twist.x * deltaTime;
+    float pitch_delta = plane->twist.y * deltaTime;
+    float yaw_delta = plane->twist.z * deltaTime;
 
-    plane->pitch_dot = plane->pitch_dot * (1 - MOUSE_SENSITIVITY) +
-                       (mouse_delta.y * MOUSE_SENSITIVITY);
+    Quaternion delta_pitch = QuaternionFromAxisAngle(Y_AXIS, pitch_delta);
+    Quaternion delta_yaw = QuaternionFromAxisAngle(Z_AXIS, yaw_delta);
+    Quaternion delta_roll = QuaternionFromAxisAngle(X_AXIS, roll_delta);
 
-    plane->yaw_dot = plane->yaw_dot * (1 - MOUSE_SENSITIVITY) +
-                     (-mouse_delta.x * MOUSE_SENSITIVITY);
+    plane->rotation = QuaternionMultiply(plane->rotation, delta_yaw);
+    plane->rotation = QuaternionMultiply(plane->rotation, delta_pitch);
+    plane->rotation = QuaternionMultiply(plane->rotation, delta_roll);
 
-    plane->pitch += plane->pitch_dot * deltaTime;
-    plane->yaw += plane->yaw_dot * deltaTime;
+    plane->rotation = QuaternionNormalize(plane->rotation);
 
-    plane->rotation = QuaternionFromEuler(plane->pitch, plane->yaw, 0);
-
-    Vector3 forward = Vector3Transform((Vector3){0, 0, 1},
-                                       QuaternionToMatrix(plane->rotation));
+    Vector3 velocity_global =
+        Vector3RotateByQuaternion(plane->velocity, plane->rotation);
     plane->position =
-        Vector3Add(plane->position,
-                   Vector3Scale(forward, plane->forward_speed * deltaTime));
+        Vector3Add(plane->position, Vector3Scale(velocity_global, deltaTime));
 }
 
 void updateCamera(Camera3D *camera, Airplane plane) {
-    const Vector3 offset = {0, 15.0f, -30.0f};
+    const Vector3 offset = {-30.0f, 0.0f, 15.0f};
 
     Matrix rotation = QuaternionToMatrix(plane.rotation);
 
     Vector3 rotated_offset = Vector3Transform(offset, rotation);
-    camera->position = Vector3Add(plane.position, rotated_offset);
-    camera->target = plane.position;
-    camera->up = Vector3Transform((Vector3){0, 1, 0}, rotation);
+    camera->position =
+        ToRaylibPosition(Vector3Add(plane.position, rotated_offset));
+    camera->target = ToRaylibPosition(plane.position);
+    camera->up = ToRaylibPosition(Vector3Transform(Z_AXIS, rotation));
 }
 
 int main(void) {
@@ -188,14 +237,11 @@ int main(void) {
     const int screenWidth = 800;
     const int screenHeight = 450;
 
-    Landmark landmarks[3] = {
-        (Landmark){.id = 1, .position = (Vector3){-80, 40, -80}},
-        (Landmark){.id = 1, .position = (Vector3){-120, 40, -120}},
-        (Landmark){.id = 1, .position = (Vector3){-130, 45, -50}},
-    };
-
     InitWindow(screenWidth, screenHeight,
                "raylib [core] example - 3d camera mode");
+
+    Mesh ellipsoid_mesh = GenMeshSphere(1.0f, 16, 16);
+    Model prediction_ellipsoid = LoadModelFromMesh(ellipsoid_mesh);
 
     Camera3D camera = {0};
     camera.up = (Vector3){0.0f, 1.0f, 0.0f};
@@ -207,8 +253,17 @@ int main(void) {
 
     Airplane plane = createAirplane();
 
+    Landmark landmarks[3] = {
+        {LANDMARK_1_ID, (Vector3)LANDMARK_1_POSITION},
+        {LANDMARK_2_ID, (Vector3)LANDMARK_2_POSITION},
+        {LANDMARK_3_ID, (Vector3)LANDMARK_3_POSITION},
+    };
+
     bool slam_active = false;
-    PoseWithCovariance slam_pose = {0};
+    SlamMessage slam_msg = {0};
+    PoseWithCovariance *slam_pose =
+        (PoseWithCovariance *)&slam_msg.pose_with_covariance;
+    Map *slam_map = (Map *)&slam_msg.map;
 
     DisableCursor();
     while (!WindowShouldClose()) {
@@ -225,45 +280,45 @@ int main(void) {
         radar_timer += deltaTime;
         gnss_timer += deltaTime;
 
-        SensorMessage msg;
+        SensorMessage msg = {0};
 
         if (odom_timer >= 1.0f / ODOM_HZ) {
             msg = measure_odometry(&plane);
             sendto(sockfd, &msg, sizeof(msg), 0, (struct sockaddr *)&dest_addr,
                    sizeof(dest_addr));
-            odom_timer = 0.0f;
+            odom_timer -= 1.0f / ODOM_HZ;
         }
 
         if (radar_timer >= 1.0f / RADAR_HZ) {
-            // msg = measure_radar(&plane, landmarks, N_LANDMARKS);
-            // sendto(sockfd, &msg, sizeof(msg), 0, (struct sockaddr
-            // *)&dest_addr,
-            //        sizeof(dest_addr));
+            msg = measure_radar(&plane, landmarks, N_LANDMARKS);
+            sendto(sockfd, &msg, sizeof(msg), 0, (struct sockaddr *)&dest_addr,
+                   sizeof(dest_addr));
 
-            radar_timer = 0.0f;
+            radar_timer -= 1.0f / RADAR_HZ;
         }
 
         if (gnss_timer >= 1.0f / GNSS_HZ) {
             msg = measure_gnss(&plane);
             sendto(sockfd, &msg, sizeof(msg), 0, (struct sockaddr *)&dest_addr,
                    sizeof(dest_addr));
-            gnss_timer = 0.0f;
+            gnss_timer -= 1.0f / GNSS_HZ;
         }
 
         DrawVectorXYZ((Vector3){0, 0, 0}, 100.0f, 5.0f);
 
-        drawAirplane(plane);
         drawLandmarks(landmarks, N_LANDMARKS);
 
         updateCamera(&camera, plane);
 
-        while (recv(sockfd, &slam_pose, sizeof(slam_pose), 0) > 0) {
+        while (recv(sockfd, &slam_msg, sizeof(slam_msg), 0) > 0) {
             slam_active = true;
         }
 
         if (slam_active) {
-            drawPrediction(slam_pose);
+            drawPrediction(*slam_pose, prediction_ellipsoid);
         }
+
+        drawAirplane(plane);
 
         EndMode3D();
         DrawFPS(10, 10);
@@ -275,21 +330,31 @@ int main(void) {
         DrawText(TextFormat("Position: (%.2f, %.2f, %.2f)", plane.position.x,
                             plane.position.y, plane.position.z),
                  10, 31, 20, BLACK);
+
+        DrawText(TextFormat("Predicted Position: (%.2f, %.2f, %.2f)",
+                            slam_pose->position.x, slam_pose->position.y,
+                            slam_pose->position.z),
+                 10, 51, 20, BLACK);
+        DrawText(TextFormat("Covariance: (%.2f, %.2f, %.2f)",
+                            slam_pose->covariance[3][3],
+                            slam_pose->covariance[4][4],
+                            slam_pose->covariance[5][5]),
+
+                 10, 71, 20, BLACK);
         DrawText(TextFormat("Pitch: %.2f, Yaw: %.2f, Roll: %.2f",
                             getPitch(plane) * RAD2DEG, getYaw(plane) * RAD2DEG,
                             getRoll(plane) * RAD2DEG),
-                 10, 51, 20, BLACK);
+                 10, 91, 20, BLACK);
 
         if (slam_active) {
-            DrawText("SLAM Active", 10, 71, 20, RED);
+            DrawText("SLAM Active", 10, 111, 20, RED);
         } else {
-            DrawText("SLAM Inactive", 10, 71, 20, DARKGRAY);
+            DrawText("SLAM Inactive", 10, 101, 20, DARKGRAY);
         }
-        DrawText(TextFormat("Covariance: (%.2f, %.2f, %.2f)", global_covariance[0], global_covariance[1], global_covariance[2]),
-             10, 91, 20, BLACK);
         EndDrawing();
     }
 
+    UnloadModel(prediction_ellipsoid);
     close(sockfd);
     CloseWindow();
     return 0;
