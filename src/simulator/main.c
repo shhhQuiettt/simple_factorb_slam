@@ -30,6 +30,17 @@
 #define Y_AXIS (Vector3){0, 1, 0}
 #define Z_AXIS (Vector3){0, 0, 1}
 
+#define WINDOW_3D_WIDTH 1000
+#define WINDOW_3D_HEIGHT 750
+
+#define RIGHT_PANEL_WIDTH 500
+
+#define MINIMAP_WIDTH 450.0f
+#define MINIMAP_HEIGHT 450.0f
+
+#define SCREEN_WIDTH (WINDOW_3D_WIDTH + RIGHT_PANEL_WIDTH)
+#define SCREEN_HEIGHT WINDOW_3D_HEIGHT
+
 float global_covariance[3];
 
 bool almost_equal(float a, float b) {
@@ -204,7 +215,7 @@ void updateAirplane(Airplane *plane, float deltaTime) {
 }
 
 void updateCamera(Camera3D *camera, Airplane plane) {
-    const Vector3 offset = {-30.0f, 0.0f, 15.0f};
+    const Vector3 offset = {-50.0f, 0.0f, 20.0f};
 
     Matrix rotation = QuaternionToMatrix(plane.rotation);
 
@@ -215,7 +226,65 @@ void updateCamera(Camera3D *camera, Airplane plane) {
     camera->up = ToRaylibPosition(Vector3Transform(Z_AXIS, rotation));
 }
 
+Vector2 WorldToMinimap(Vector3 world_position) {
+    float world_x = world_position.x;
+    float world_y = world_position.y;
+
+    const float minimap_world_size = 400.0f;
+    float scale = MINIMAP_WIDTH / minimap_world_size;
+
+    float map_x = (world_x * scale) + (MINIMAP_WIDTH / 2.0f);
+    float map_y = (-world_y * scale) + (MINIMAP_HEIGHT / 2.0f);
+
+    return (Vector2){map_x, map_y};
+}
+
+void renderTrueMinimap(RenderTexture2D target, Airplane *plane,
+                       Landmark *landmarks, int n_landmarks) {
+    BeginTextureMode(target);
+    ClearBackground(RAYWHITE);
+
+    DrawRectangle(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT, DARKGRAY);
+
+    const Color landmark_colors[3] = {RED, GREEN, BLUE};
+
+    for (int i = 0; i < n_landmarks; i++) {
+        Vector2 pos = WorldToMinimap(landmarks[i].position);
+        DrawCircleV(pos, 5.0f, landmark_colors[i % 3]);
+    }
+
+    Vector2 plane_pos = WorldToMinimap(plane->position);
+    float yaw = getYaw(*plane);
+
+    DrawRectangle(plane_pos.x - 5, plane_pos.y - 5, 10, 10, BLUE);
+
+    Vector3 true_left_ray_end =
+        Vector3RotateByAxisAngle(Vector3Scale(plane->position, RADAR_MAX_RANGE),
+                                 Z_AXIS, yaw - RADAR_FOV_RAD / 2);
+    Vector3 true_right_ray_end =
+        Vector3RotateByAxisAngle(Vector3Scale(plane->position, RADAR_MAX_RANGE),
+                                 Z_AXIS, yaw + RADAR_FOV_RAD / 2);
+
+    Vector2 ray_start = plane_pos;
+    Vector2 left_ray_end =
+        WorldToMinimap(Vector3Add(plane->position, true_left_ray_end));
+    Vector2 right_ray_end =
+        WorldToMinimap(Vector3Add(plane->position, true_right_ray_end));
+
+    DrawLineEx(ray_start, left_ray_end, 2.0f, Fade(BLUE, 0.5f));
+    DrawLineEx(ray_start, right_ray_end, 2.0f, Fade(BLUE, 0.5f));
+
+    EndTextureMode();
+}
+
 int main(void) {
+    ASSERT_EX(
+        WINDOW_3D_WIDTH + RIGHT_PANEL_WIDTH <= SCREEN_WIDTH,
+        "Total width of 3D view and right panel must be less than or equal "
+        "to screen width");
+    ASSERT_EX(WINDOW_3D_HEIGHT <= SCREEN_HEIGHT,
+              "Height of 3D view must be less than or equal to screen height");
+
     srand(time(NULL));
 
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -234,11 +303,13 @@ int main(void) {
     float radar_timer = 0.0f;
     float gnss_timer = 0.0f;
 
-    const int screenWidth = 800;
-    const int screenHeight = 450;
+    InitWindow(WINDOW_3D_WIDTH + RIGHT_PANEL_WIDTH, WINDOW_3D_HEIGHT,
+               "Airplane SLAM Simulation - Press Q to Quit");
 
-    InitWindow(screenWidth, screenHeight,
-               "raylib [core] example - 3d camera mode");
+    RenderTexture2D viewTarget =
+        LoadRenderTexture(WINDOW_3D_WIDTH, WINDOW_3D_HEIGHT);
+    RenderTexture2D minimapTarget =
+        LoadRenderTexture(MINIMAP_WIDTH, MINIMAP_HEIGHT);
 
     Mesh ellipsoid_mesh = GenMeshSphere(1.0f, 16, 16);
     Model prediction_ellipsoid = LoadModelFromMesh(ellipsoid_mesh);
@@ -266,15 +337,9 @@ int main(void) {
     Map *slam_map = (Map *)&slam_msg.map;
 
     DisableCursor();
+
     while (!WindowShouldClose()) {
-        BeginDrawing();
-        ClearBackground(RAYWHITE);
-        BeginMode3D(camera);
-
-        DrawGrid(128, 10.0f);
-
         float deltaTime = GetFrameTime();
-        updateAirplane(&plane, deltaTime);
 
         odom_timer += deltaTime;
         radar_timer += deltaTime;
@@ -304,29 +369,60 @@ int main(void) {
             gnss_timer -= 1.0f / GNSS_HZ;
         }
 
+        updateAirplane(&plane, deltaTime);
+        updateCamera(&camera, plane);
+
+        renderTrueMinimap(minimapTarget, &plane, landmarks, N_LANDMARKS);
+
+        ////// 3D view drawing /////
+        BeginTextureMode(viewTarget);
+
+        ClearBackground(RAYWHITE);
+        BeginMode3D(camera);
+
+        DrawGrid(128, 10.0f);
+
         DrawVectorXYZ((Vector3){0, 0, 0}, 100.0f, 5.0f);
 
         drawLandmarks(landmarks, N_LANDMARKS);
-
-        updateCamera(&camera, plane);
-
-        while (recv(sockfd, &slam_msg, sizeof(slam_msg), 0) > 0) {
-            slam_active = true;
-        }
+        drawAirplane(plane);
 
         if (slam_active) {
             drawPrediction(*slam_pose, prediction_ellipsoid);
         }
 
-        drawAirplane(plane);
-
         EndMode3D();
-        DrawFPS(10, 10);
-        // Vector2 mouse_delta = GetMouseDelta();
-        // DrawText(TextFormat("Mouse Delta: (%.2f, %.2f)", mouse_delta.x,
+        EndTextureMode();
 
-        //                     mouse_delta.y),
-        //          10, 31, 20, BLACK);
+        ////////////////////
+
+        BeginDrawing();
+        ClearBackground(RAYWHITE);
+
+        Rectangle window_3d_rect = {0.0f, 0.0f, (float)WINDOW_3D_WIDTH,
+                                    -(float)WINDOW_3D_HEIGHT};
+        DrawTextureRec(viewTarget.texture, window_3d_rect, (Vector2){0, 0},
+                       WHITE);
+
+        Rectangle minimap_rect = {0.0f, 0.0f, MINIMAP_WIDTH, -MINIMAP_HEIGHT};
+        const float minimap_margin = (RIGHT_PANEL_WIDTH - MINIMAP_WIDTH) / 2.0f;
+
+        const float minimap_x = WINDOW_3D_WIDTH + minimap_margin;
+        const float minimap_y = minimap_margin;
+
+        DrawTextureRec(minimapTarget.texture, minimap_rect,
+                       (Vector2){minimap_x, minimap_y}, WHITE);
+
+        // DrawRectangle(WINDOW_3D_WIDTH, 0, RIGHT_PANEL_WIDTH, SCREEN_HEIGHT,
+        //               LIGHTGRAY);
+        // DrawLine(WINDOW_3D_WIDTH, 0, WINDOW_3D_WIDTH, SCREEN_HEIGHT,
+        // DARKGRAY);
+
+        while (recv(sockfd, &slam_msg, sizeof(slam_msg), 0) > 0) {
+            slam_active = true;
+        }
+
+        DrawFPS(10, 10);
         DrawText(TextFormat("Position: (%.2f, %.2f, %.2f)", plane.position.x,
                             plane.position.y, plane.position.z),
                  10, 31, 20, BLACK);
@@ -351,10 +447,13 @@ int main(void) {
         } else {
             DrawText("SLAM Inactive", 10, 101, 20, DARKGRAY);
         }
+
         EndDrawing();
     }
 
     UnloadModel(prediction_ellipsoid);
+    UnloadRenderTexture(viewTarget);
+    UnloadRenderTexture(minimapTarget);
     close(sockfd);
     CloseWindow();
     return 0;
