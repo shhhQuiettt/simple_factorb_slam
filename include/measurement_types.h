@@ -48,6 +48,8 @@
 #define LANDMARK_2_POSITION {100.0f, 0.0f, 10.0f}
 #define LANDMARK_3_POSITION {80.0f, 100.0f, 30.0f}
 
+#define MAX_PATH_LENGTH 1024
+
 #ifndef NDEBUG
 #define ASSERT_EX(condition, statement)                                        \
     do {                                                                       \
@@ -107,8 +109,10 @@ typedef struct Map {
 } Map;
 
 typedef struct SlamMessage {
-    Map map;
     PoseWithCovariance pose_with_covariance;
+    Map map;
+    Vector3 predicted_path[MAX_PATH_LENGTH];
+    int path_length;
 } SlamMessage;
 
 #endif // MEASUREMENT_TYPES_H

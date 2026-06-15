@@ -246,7 +246,21 @@ void renderTrueMinimap(RenderTexture2D target, Airplane *plane,
 
     DrawRectangle(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT, DARKGRAY);
 
+    DrawLine(MINIMAP_WIDTH / 2, 0, MINIMAP_WIDTH / 2, MINIMAP_HEIGHT, GRAY);
+
     const Color landmark_colors[3] = {RED, GREEN, BLUE};
+
+    Vector3 world_center = (Vector3){0, 0, 0};
+    Vector2 center = WorldToMinimap(world_center);
+
+    Vector3 world_x_axis_end = (Vector3){100.0f, 0, 0};
+    Vector3 world_y_axis_end = (Vector3){0, 100.0f, 0};
+
+    Vector2 x_axis_end = WorldToMinimap(world_x_axis_end);
+    Vector2 y_axis_end = WorldToMinimap(world_y_axis_end);
+
+    DrawLineEx(center, x_axis_end, 2.0f, RED);
+    DrawLineEx(center, y_axis_end, 2.0f, GREEN);
 
     for (int i = 0; i < n_landmarks; i++) {
         Vector2 pos = WorldToMinimap(landmarks[i].position);
@@ -258,21 +272,19 @@ void renderTrueMinimap(RenderTexture2D target, Airplane *plane,
 
     DrawRectangle(plane_pos.x - 5, plane_pos.y - 5, 10, 10, BLUE);
 
-    Vector3 true_left_ray_end =
-        Vector3RotateByAxisAngle(Vector3Scale(plane->position, RADAR_MAX_RANGE),
-                                 Z_AXIS, yaw - RADAR_FOV_RAD / 2);
-    Vector3 true_right_ray_end =
-        Vector3RotateByAxisAngle(Vector3Scale(plane->position, RADAR_MAX_RANGE),
-                                 Z_AXIS, yaw + RADAR_FOV_RAD / 2);
+    Vector3 forward_radar_ray = Vector3Scale(
+        Vector3RotateByQuaternion(X_AXIS, plane->rotation), RADAR_MAX_RANGE);
 
-    Vector2 ray_start = plane_pos;
-    Vector2 left_ray_end =
-        WorldToMinimap(Vector3Add(plane->position, true_left_ray_end));
-    Vector2 right_ray_end =
-        WorldToMinimap(Vector3Add(plane->position, true_right_ray_end));
+    Vector3 world_left_radar_ray = Vector3RotateByAxisAngle(forward_radar_ray, Z_AXIS, RADAR_FOV_RAD / 2.0f);
 
-    DrawLineEx(ray_start, left_ray_end, 2.0f, Fade(BLUE, 0.5f));
-    DrawLineEx(ray_start, right_ray_end, 2.0f, Fade(BLUE, 0.5f));
+    Vector3 world_right_radar_ray = Vector3RotateByAxisAngle(forward_radar_ray, Z_AXIS, -RADAR_FOV_RAD / 2.0f);
+
+    Vector2 left_radar_ray = WorldToMinimap(Vector3Add(plane->position, world_left_radar_ray));
+    Vector2 right_radar_ray = WorldToMinimap(Vector3Add(plane->position, world_right_radar_ray));
+
+    DrawLineEx(plane_pos, left_radar_ray, 1.0f, Fade(BLUE, 0.5f));
+    DrawLineEx(plane_pos, right_radar_ray, 1.0f, Fade(BLUE, 0.5f));
+
 
     EndTextureMode();
 }
