@@ -48,7 +48,7 @@
 #define LANDMARK_2_POSITION {100.0f, 0.0f, 10.0f}
 #define LANDMARK_3_POSITION {80.0f, 100.0f, 30.0f}
 
-#define MAX_PATH_LENGTH 1024
+#define MAX_PATH_LENGTH 2048
 
 #ifndef NDEBUG
 #define ASSERT_EX(condition, statement)                                        \

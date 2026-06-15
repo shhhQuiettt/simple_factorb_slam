@@ -266,6 +266,23 @@ int main() {
                 slam_msg.pose_with_covariance = predicted_pose;
                 slam_msg.map = map;
 
+                int path_idx = 0;
+                int start_key =
+                    std::max(0, static_cast<int>(current_pose_key -
+                                                 MAX_PATH_LENGTH + 1));
+
+                for (uint64_t i = start_key; i <= current_pose_key; ++i) {
+                    if (current_estimate.exists(i)) {
+                        Pose3 p = current_estimate.at<Pose3>(i);
+                        slam_msg.predicted_path[path_idx].x = p.x();
+                        slam_msg.predicted_path[path_idx].y = p.y();
+                        slam_msg.predicted_path[path_idx].z = p.z();
+                        path_idx++;
+                    }
+                }
+
+                slam_msg.path_length = path_idx;
+
                 ASSERT_EX(slam_msg.map.landmarks[0].id == 1 &&
                               slam_msg.map.landmarks[1].id == 2 &&
                               slam_msg.map.landmarks[2].id == 3,

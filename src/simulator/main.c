@@ -239,8 +239,8 @@ Vector2 WorldToMinimap(Vector3 world_position) {
     return (Vector2){map_x, map_y};
 }
 
-void renderTrueMinimap(RenderTexture2D target, Airplane *plane,
-                       Landmark *landmarks, int n_landmarks) {
+void renderMinimap(RenderTexture2D target, Airplane *plane, Landmark *landmarks,
+                   int n_landmarks, SlamMessage *slam_msg, bool slam_active) {
     BeginTextureMode(target);
     ClearBackground(RAYWHITE);
 
@@ -268,34 +268,43 @@ void renderTrueMinimap(RenderTexture2D target, Airplane *plane,
     }
 
     Vector2 plane_pos = WorldToMinimap(plane->position);
-    float yaw = getYaw(*plane);
 
     DrawRectangle(plane_pos.x - 5, plane_pos.y - 5, 10, 10, BLUE);
 
     Vector3 forward_radar_ray = Vector3Scale(
         Vector3RotateByQuaternion(X_AXIS, plane->rotation), RADAR_MAX_RANGE);
 
-    Vector3 world_left_radar_ray = Vector3RotateByAxisAngle(forward_radar_ray, Z_AXIS, RADAR_FOV_RAD / 2.0f);
+    Vector3 world_left_radar_ray = Vector3RotateByAxisAngle(
+        forward_radar_ray, Z_AXIS, RADAR_FOV_RAD / 2.0f);
 
-    Vector3 world_right_radar_ray = Vector3RotateByAxisAngle(forward_radar_ray, Z_AXIS, -RADAR_FOV_RAD / 2.0f);
+    Vector3 world_right_radar_ray = Vector3RotateByAxisAngle(
+        forward_radar_ray, Z_AXIS, -RADAR_FOV_RAD / 2.0f);
 
-    Vector2 left_radar_ray = WorldToMinimap(Vector3Add(plane->position, world_left_radar_ray));
-    Vector2 right_radar_ray = WorldToMinimap(Vector3Add(plane->position, world_right_radar_ray));
+    Vector2 left_radar_ray =
+        WorldToMinimap(Vector3Add(plane->position, world_left_radar_ray));
+    Vector2 right_radar_ray =
+        WorldToMinimap(Vector3Add(plane->position, world_right_radar_ray));
 
     DrawLineEx(plane_pos, left_radar_ray, 1.0f, Fade(BLUE, 0.5f));
     DrawLineEx(plane_pos, right_radar_ray, 1.0f, Fade(BLUE, 0.5f));
 
+    if (!slam_active) {
+        EndTextureMode();
+        return;
+    }
 
+    for (int i = 1; i < slam_msg->path_length; i++) {
+        Vector2 p1 = WorldToMinimap(slam_msg->predicted_path[i - 1]);
+        Vector2 p2 = WorldToMinimap(slam_msg->predicted_path[i]);
+
+        DrawLineEx(p1, p2, 2.0f, Fade(ORANGE, 0.5f));
+    }
     EndTextureMode();
 }
 
 int main(void) {
-    ASSERT_EX(
-        WINDOW_3D_WIDTH + RIGHT_PANEL_WIDTH <= SCREEN_WIDTH,
-        "Total width of 3D view and right panel must be less than or equal "
-        "to screen width");
-    ASSERT_EX(WINDOW_3D_HEIGHT <= SCREEN_HEIGHT,
-              "Height of 3D view must be less than or equal to screen height");
+    assert(WINDOW_3D_WIDTH + RIGHT_PANEL_WIDTH <= SCREEN_WIDTH);
+    assert(WINDOW_3D_HEIGHT <= SCREEN_HEIGHT);
 
     srand(time(NULL));
 
@@ -346,7 +355,7 @@ int main(void) {
     SlamMessage slam_msg = {0};
     PoseWithCovariance *slam_pose =
         (PoseWithCovariance *)&slam_msg.pose_with_covariance;
-    Map *slam_map = (Map *)&slam_msg.map;
+    // Map *slam_map = (Map *)&slam_msg.map;
 
     DisableCursor();
 
@@ -384,7 +393,8 @@ int main(void) {
         updateAirplane(&plane, deltaTime);
         updateCamera(&camera, plane);
 
-        renderTrueMinimap(minimapTarget, &plane, landmarks, N_LANDMARKS);
+        renderMinimap(minimapTarget, &plane, landmarks, N_LANDMARKS, &slam_msg,
+                      slam_active);
 
         ////// 3D view drawing /////
         BeginTextureMode(viewTarget);
@@ -425,7 +435,8 @@ int main(void) {
         DrawTextureRec(minimapTarget.texture, minimap_rect,
                        (Vector2){minimap_x, minimap_y}, WHITE);
 
-        // DrawRectangle(WINDOW_3D_WIDTH, 0, RIGHT_PANEL_WIDTH, SCREEN_HEIGHT,
+        // DrawRectangle(WINDOW_3D_WIDTH, 0, RIGHT_PANEL_WIDTH,
+        // SCREEN_HEIGHT,
         //               LIGHTGRAY);
         // DrawLine(WINDOW_3D_WIDTH, 0, WINDOW_3D_WIDTH, SCREEN_HEIGHT,
         // DARKGRAY);
