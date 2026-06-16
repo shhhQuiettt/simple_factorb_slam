@@ -53,7 +53,8 @@ int main() {
         static_cast<int>(1000.0f / UPDATE_RATE_HZ));
 
     auto landmark_prior_pose_noise =
-        noiseModel::Diagonal::Sigmas((Vector(3) << 0.5, 0.5, 0.5).finished());
+        // noiseModel::Diagonal::Sigmas((Vector(3) << 0.5, 0.5, 0.5).finished());
+        noiseModel::Diagonal::Sigmas((Vector(3) << 10, 10, 10).finished());
 
     // Add priors for landmarks
 

@@ -41,7 +41,7 @@
 #define SCREEN_WIDTH (WINDOW_3D_WIDTH + RIGHT_PANEL_WIDTH)
 #define SCREEN_HEIGHT WINDOW_3D_HEIGHT
 
-#define DISABLE_SLAM 1
+#define DISABLE_SLAM 0
 
 float global_covariance[3];
 
@@ -301,6 +301,51 @@ void renderMinimap(RenderTexture2D target, Airplane *plane, Landmark *landmarks,
 
         DrawLineEx(p1, p2, 2.0f, Fade(ORANGE, 0.5f));
     }
+
+    const float minimap_world_size = 400.0f;
+    float scale = MINIMAP_WIDTH / minimap_world_size;
+
+    for (int i = 0; i < N_LANDMARKS; i++) {
+        Vector3 pred_pos = slam_msg->map.landmarks[i].position;
+        Vector2 map_pred_pos = WorldToMinimap(pred_pos);
+        Color estimation_color = landmark_colors[i % 3];
+
+        // 1. Draw the exact predicted position
+        DrawCircleV(map_pred_pos, 3.0f, WHITE);
+        DrawCircleLinesV(map_pred_pos, 3.0f, estimation_color);
+
+        float var_x = slam_msg->map.covariance[i][0][0];
+        float var_y = slam_msg->map.covariance[i][1][1];
+        float cov_xy = slam_msg->map.covariance[i][0][1];
+
+        cov_xy = -cov_xy;
+
+        float trace = var_x + var_y;
+        float diff = var_x - var_y;
+
+        float discriminant = sqrtf(diff * diff + 4.0f * cov_xy * cov_xy);
+
+        float lambda1 = (trace + discriminant) / 2.0f;
+        float lambda2 = (trace - discriminant) / 2.0f;
+
+        lambda1 = fmaxf(0.0f, lambda1);
+        lambda2 = fmaxf(0.0f, lambda2);
+
+        float radius1 = 3.0f * sqrtf(lambda1) * scale;
+        float radius2 = 3.0f * sqrtf(lambda2) * scale;
+
+        float angle_rad = 0.5f * atan2f(2.0f * cov_xy, diff);
+        float angle_deg = angle_rad * RAD2DEG;
+
+        rlPushMatrix();
+        rlTranslatef(map_pred_pos.x, map_pred_pos.y, 0.0f);
+        rlRotatef(angle_deg, 0.0f, 0.0f, 1.0f); // Rotate around the Z axis
+
+        DrawEllipse(0, 0, radius1, radius2, Fade(estimation_color, 0.2f));
+        DrawEllipseLines(0, 0, radius1, radius2, Fade(estimation_color, 0.4f));
+
+        rlPopMatrix();
+    }
     EndTextureMode();
 }
 
@@ -357,7 +402,7 @@ int main(void) {
     SlamMessage slam_msg = {0};
     PoseWithCovariance *slam_pose =
         (PoseWithCovariance *)&slam_msg.pose_with_covariance;
-        // Map *slam_map = (Map *)&slam_msg.map;
+    // Map *slam_map = (Map *)&slam_msg.map;
 
     DisableCursor();
 
