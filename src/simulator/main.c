@@ -41,6 +41,8 @@
 #define SCREEN_WIDTH (WINDOW_3D_WIDTH + RIGHT_PANEL_WIDTH)
 #define SCREEN_HEIGHT WINDOW_3D_HEIGHT
 
+#define DISABLE_SLAM 1
+
 float global_covariance[3];
 
 bool almost_equal(float a, float b) {
@@ -355,7 +357,7 @@ int main(void) {
     SlamMessage slam_msg = {0};
     PoseWithCovariance *slam_pose =
         (PoseWithCovariance *)&slam_msg.pose_with_covariance;
-    // Map *slam_map = (Map *)&slam_msg.map;
+        // Map *slam_map = (Map *)&slam_msg.map;
 
     DisableCursor();
 
@@ -441,8 +443,10 @@ int main(void) {
         // DrawLine(WINDOW_3D_WIDTH, 0, WINDOW_3D_WIDTH, SCREEN_HEIGHT,
         // DARKGRAY);
 
-        while (recv(sockfd, &slam_msg, sizeof(slam_msg), 0) > 0) {
-            slam_active = true;
+        if (!DISABLE_SLAM) {
+            while (recv(sockfd, &slam_msg, sizeof(slam_msg), 0) > 0) {
+                slam_active = true;
+            }
         }
 
         DrawFPS(10, 10);
